@@ -27,20 +27,28 @@
   function renderHeader() {
     var el = document.getElementById("moveHead");
     if (!state.moveDate) {
-      el.innerHTML = '<p class="muted">Set your moving date to generate the countdown plan.</p>';
+      el.innerHTML = '<div class="ring-wrap" aria-hidden="true"><svg width="128" height="128" viewBox="0 0 128 128"><circle class="ring-bg" cx="64" cy="64" r="56" stroke-width="11"/><circle class="ring-fg" cx="64" cy="64" r="56" stroke-width="11" stroke-dasharray="351.9" stroke-dashoffset="351.9"/></svg><div class="ring-num"><div><b>—</b><span>COMPLETE</span></div></div></div>' +
+        '<div class="hero-copy"><h2>Where to?</h2><p class="muted" style="color:#cbb9a4">Set your moving date above and your 8-week route map appears.</p></div>';
       return;
     }
     var days = daysUntil(state.moveDate, todayISO());
     var plan = buildPlan(state.moveDate, todayISO());
     var prog = planProgress(plan, state.done);
+    var C = 351.9;
+    var off = C - (C * prog.pct / 100);
     var when = days < 0 ? Math.abs(days) + " days ago" : days === 0 ? "today!" : "in " + days + " days";
     el.innerHTML =
+      '<div class="ring-wrap" role="img" aria-label="' + prog.pct + '% complete"><svg width="128" height="128" viewBox="0 0 128 128">' +
+      '<circle class="ring-bg" cx="64" cy="64" r="56" stroke-width="11"/>' +
+      '<circle class="ring-fg" cx="64" cy="64" r="56" stroke-width="11" stroke-dasharray="' + C + '" stroke-dashoffset="' + off + '"/></svg>' +
+      '<div class="ring-num"><div><b>' + prog.pct + '%</b><span>COMPLETE</span></div></div></div>' +
+      '<div class="hero-copy"><h2>Moving ' + esc(state.moveDate) + '</h2>' +
+      '<span class="when">' + esc(when) + '</span></div>' +
       '<div class="hero-stats">' +
-      '<div class="stat"><span class="stat-num">' + esc(when) + '</span><span class="stat-lbl">Moving ' + esc(state.moveDate) + '</span></div>' +
-      '<div class="stat"><span class="stat-num">' + prog.pct + '%</span><span class="stat-lbl">' + prog.done + " / " + prog.total + " tasks done</span></div>" +
+      '<div class="stat"><span class="stat-num">' + prog.done + '/' + prog.total + '</span><span class="stat-lbl">tasks done</span></div>' +
       '<div class="stat"><span class="stat-num">' + state.boxes.length + '</span><span class="stat-lbl">boxes packed</span></div>' +
-      "</div>" +
-      '<div class="progress"><div class="progress-fill" style="width:' + prog.pct + '%"></div></div>';
+      '<div class="stat"><span class="stat-num">' + state.movers.length + '</span><span class="stat-lbl">mover quotes</span></div>' +
+      "</div>";
   }
 
   function renderPlan() {
@@ -48,20 +56,24 @@
     if (!state.moveDate) { host.innerHTML = '<p class="muted">Pick a moving date above to see your week-by-week plan.</p>'; return; }
     var plan = buildPlan(state.moveDate, todayISO());
     var doneSet = {}; state.done.forEach(function (id) { doneSet[id] = true; });
-    var html = "";
+    var html = '<div class="route">';
     WEEKS.forEach(function (w) {
       var items = plan.filter(function (p) { return p.week === w; });
       if (!items.length) return;
-      html += '<details class="week" ' + (w >= 6 || w === 0 ? "open" : "") + '><summary>' + esc(weekLabel(w)) +
-        ' <span class="count">' + items.filter(function (p) { return doneSet[p.id]; }).length + "/" + items.length + "</span></summary><ul class='tasks'>";
+      var terminal = w === 0 ? " terminal" : "";
+      html += '<details class="week' + terminal + '" ' + (w >= 6 || w === 0 ? "open" : "") + '><summary>' +
+        '<span class="wk-tag">' + (w === 0 ? "Terminal" : "Week " + w) + "</span>" + esc(weekLabel(w)) +
+        ' <span class="count">' + items.filter(function (p) { return doneSet[p.id]; }).length + "/" + items.length + '</span><span class="chev">▾</span></summary><ul class="tasks">';
       items.forEach(function (p) {
         var cls = doneSet[p.id] ? "done" : (p.overdue ? "overdue" : "");
         html += '<li class="' + cls + '"><label><input type="checkbox" data-task="' + p.id + '"' +
-          (doneSet[p.id] ? " checked" : "") + "> <span class='cat'>" + esc(p.cat) + "</span> " + esc(p.task) +
-          (p.overdue && !doneSet[p.id] ? ' <span class="badge">overdue</span>' : "") + "</label></li>";
+          (doneSet[p.id] ? " checked" : "") + "> <span class='cat'>" + esc(p.cat) + "</span> <span class='task-text'>" + esc(p.task) + "</span>" +
+          (p.overdue && !doneSet[p.id] ? ' <span class="badge">overdue</span>' : "") +
+          ' <span class="due">' + esc(p.due) + "</span></label></li>";
       });
       html += "</ul></details>";
     });
+    html += "</div>";
     host.innerHTML = html;
     host.querySelectorAll("input[data-task]").forEach(function (cb) {
       cb.addEventListener("change", function () {
@@ -96,7 +108,7 @@
           '<div class="box-head"><strong>' + esc(b.label) + "</strong>" +
           (b.essentials ? ' <span class="badge star">first-night</span>' : "") +
           (b.fragile ? ' <span class="badge">fragile</span>' : "") + "</div>" +
-          (b.room ? '<div class="muted">' + esc(b.room) + "</div>" : "") +
+          (b.room ? '<div class="room-tag">' + esc(b.room) + "</div>" : "") +
           (b.contents ? "<p>" + esc(b.contents) + "</p>" : "") +
           '<div class="row"><button data-ess="' + b.id + '">' + (b.essentials ? "Unmark essentials" : "Mark as essentials") + '</button>' +
           '<button class="danger" data-delbox="' + b.id + '">Remove</button></div></div>';
@@ -145,10 +157,12 @@
     else {
       html += '<table class="table"><thead><tr><th></th><th>Company</th><th>Quote</th><th>Rating</th><th>Notes</th><th></th></tr></thead><tbody>';
       ranked.forEach(function (m, i) {
-        html += "<tr>" + (i === 0 ? '<td><span class="badge best">Best quote</span></td>' : "<td></td>") +
-          "<td><strong>" + esc(m.name) + "</strong></td><td>" + (m.quote ? "$" + Number(m.quote).toLocaleString() : "—") + "</td>" +
+        html += '<tr class="mover-row' + (i === 0 ? " winner" : "") + '">' +
+          '<td><span class="mover-rank">' + (i + 1) + "</span>" + (i === 0 ? ' <span class="badge best">Best quote</span>' : "") + "</td>" +
+          "<td><strong>" + esc(m.name) + "</strong></td>" +
+          '<td class="quote">' + (m.quote ? "$" + Number(m.quote).toLocaleString() : "—") + "</td>" +
           "<td>" + (m.rating ? m.rating.toFixed(1) + "★" : "—") + "</td><td>" + esc(m.notes) + "</td>" +
-          '<td><button class="danger" data-delmover="' + m.id + '">Remove</button></td></tr>';
+          '<td><button class="danger ghost small" data-delmover="' + m.id + '">Remove</button></td></tr>';
       });
       html += "</tbody></table>";
     }
