@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MovingCheck AI — your moving-day copilot</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <h1 class="brand">MovingCheck AI</h1>
+    <p class="tagline">Your complete moving-day command center — plan, pack, and settle in.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card datebar">
+    <label for="moveDate"><strong>Moving date</strong></label>
+    <input type="date" id="moveDate">
+    <button id="resetAll" class="danger ghost">Start over</button>
+  </section>
+
+  <section id="moveHead" class="card"></section>
+
+  <nav class="tabs">
+    <button id="tabbtn-plan" class="active" data-tab="plan">Countdown plan</button>
+    <button id="tabbtn-boxes" data-tab="boxes">Boxes</button>
+    <button id="tabbtn-movers" data-tab="movers">Movers</button>
+  </nav>
+
+  <section id="tab-plan"></section>
+  <section id="tab-boxes" class="hidden"></section>
+  <section id="tab-movers" class="hidden"></section>
+</main>
+
+<footer class="foot">
+  <p>100% local — your move details never leave this browser. No account, no API keys.</p>
+</footer>
+
+<script src="js/movebank.js"></script>
+<script src="js/logic.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
