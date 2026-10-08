@@ -9,7 +9,11 @@ Your moving-day copilot. Set a moving date and get an 8-week countdown checklist
 - **8-week countdown plan** — 36 tasks across declutter, packing, admin, research, and moving day, each auto-dated from your moving date with overdue highlighting
 - **Progress tracking** — live completion % with per-week counts
 - **Box inventory** — label boxes, assign rooms, list contents, flag fragile; mark your first-night essentials box (with a suggested packing list)
+- **Custom tasks** — add your own tasks to any week (with category), searchable alongside the built-in plan
 - **Mover comparison** — collect quotes + ratings + notes, auto-ranked cheapest-first with a best-quote badge
+- **Packing supplies estimator** — rough boxes/tape/wrap counts from your bedroom count
+- **Room filter** — filter the box inventory by room, with per-room counts
+- **CSV export** — download the box inventory or mover quotes as CSV
 - **Printable** — clean print CSS for the checklist and box list
 
 ## Run it
@@ -25,8 +29,8 @@ python3 -m http.server 8080
 ## Tests
 
 ```bash
-bash test/smoke.sh   # 12 checks
-bash test/e2e.sh     # 6 flows
+bash test/smoke.sh   # 13 checks
+bash test/e2e.sh     # 11 flows
 ```
 
 ## Optional AI enhancement

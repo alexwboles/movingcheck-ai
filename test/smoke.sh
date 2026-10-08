@@ -31,6 +31,11 @@ check "first-night suggestions list non-empty" node -e "
 check "11 rooms defined" node -e "
   const r=require('./js/movebank.js').MOVE_ROOMS;
   if(r.length<8) throw new Error('only '+r.length+' rooms');"
+check "custom task helpers exported" node -e "
+  const L=require('./js/logic.js');
+  ['addCustomTask','removeCustomTask','mergePlan','filterPlan','roomCounts','boxesToCSV','moversToCSV','estimateSupplies'].forEach(f=>{
+    if(typeof L[f]!=='function') throw new Error('missing '+f);});
+  if(L.TASK_CATS.length<5) throw new Error('too few task categories');"
 
 echo "--- smoke: $pass passed, $fail failed ---"
 exit $((fail>0))

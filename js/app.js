@@ -8,8 +8,9 @@
     catch (e) { return {}; }
   }
   function save(s) { localStorage.setItem(KEY, JSON.stringify(s)); }
-  var state = Object.assign({ moveDate: "", done: [], boxes: [], movers: [], tab: "plan" }, load());
+  var state = Object.assign({ moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "" }, load());
   function persist() { save(state); }
+  var planQuery = "";
 
   function todayISO() {
     var d = new Date();
@@ -54,35 +55,88 @@
   function renderPlan() {
     var host = document.getElementById("tab-plan");
     if (!state.moveDate) { host.innerHTML = '<p class="muted">Pick a moving date above to see your week-by-week plan.</p>'; return; }
-    var plan = buildPlan(state.moveDate, todayISO());
+    var plan = mergePlan(buildPlan(state.moveDate, todayISO()), state.customTasks, state.moveDate, todayISO());
     var doneSet = {}; state.done.forEach(function (id) { doneSet[id] = true; });
-    var html = '<div class="route">';
-    WEEKS.forEach(function (w) {
-      var items = plan.filter(function (p) { return p.week === w; });
-      if (!items.length) return;
-      var terminal = w === 0 ? " terminal" : "";
-      html += '<details class="week' + terminal + '" ' + (w >= 6 || w === 0 ? "open" : "") + '><summary>' +
-        '<span class="wk-tag">' + (w === 0 ? "Terminal" : "Week " + w) + "</span>" + esc(weekLabel(w)) +
-        ' <span class="count">' + items.filter(function (p) { return doneSet[p.id]; }).length + "/" + items.length + '</span><span class="chev">▾</span></summary><ul class="tasks">';
-      items.forEach(function (p) {
-        var cls = doneSet[p.id] ? "done" : (p.overdue ? "overdue" : "");
-        html += '<li class="' + cls + '"><label><input type="checkbox" data-task="' + p.id + '"' +
-          (doneSet[p.id] ? " checked" : "") + "> <span class='cat'>" + esc(p.cat) + "</span> <span class='task-text'>" + esc(p.task) + "</span>" +
-          (p.overdue && !doneSet[p.id] ? ' <span class="badge">overdue</span>' : "") +
-          ' <span class="due">' + esc(p.due) + "</span></label></li>";
+    var q = planQuery;
+    var html = '<div class="card form-grid" style="margin-bottom:1.25rem">' +
+      '<input id="planSearch" placeholder="Search tasks (e.g. insurance)…" value="' + esc(q) + '" aria-label="Search tasks">' +
+      '<select id="ctWeek" aria-label="Task week">' +
+      [8,7,6,5,4,3,2,1,0].map(function (w) { return '<option value="' + w + '"' + (w === 2 ? " selected" : "") + ">" + esc(weekLabel(w)) + "</option>"; }).join("") +
+      '</select>' +
+      '<select id="ctCat" aria-label="Task category">' + TASK_CATS.map(function (c) { return "<option>" + esc(c) + "</option>"; }).join("") + "</select>" +
+      '<input id="ctTitle" placeholder="Add your own task…" maxlength="120">' +
+      '<button type="button" id="ctAdd">Add task</button></div>';
+    if (q) {
+      var hits = filterPlan(plan, q);
+      html += '<p class="muted small">' + hits.length + ' match' + (hits.length === 1 ? "" : "es") + ' for "' + esc(q) + '"</p>';
+      if (!hits.length) html += '<p class="muted">No tasks match. Try another search, or add it as your own task above.</p>';
+      else {
+        html += '<ul class="tasks">';
+        hits.forEach(function (p) {
+          html += taskItemHtml(p, doneSet);
+        });
+        html += "</ul>";
+      }
+    } else {
+      html += '<div class="route">';
+      WEEKS.forEach(function (w) {
+        var items = plan.filter(function (p) { return p.week === w; });
+        if (!items.length) return;
+        var terminal = w === 0 ? " terminal" : "";
+        html += '<details class="week' + terminal + '" ' + (w >= 6 || w === 0 ? "open" : "") + '><summary>' +
+          '<span class="wk-tag">' + (w === 0 ? "Terminal" : "Week " + w) + "</span>" + esc(weekLabel(w)) +
+          ' <span class="count">' + items.filter(function (p) { return doneSet[p.id]; }).length + "/" + items.length + '</span><span class="chev">▾</span></summary><ul class="tasks">';
+        items.forEach(function (p) {
+          html += taskItemHtml(p, doneSet);
+        });
+        html += "</ul></details>";
       });
-      html += "</ul></details>";
-    });
-    html += "</div>";
+      html += "</div>";
+    }
     host.innerHTML = html;
     host.querySelectorAll("input[data-task]").forEach(function (cb) {
       cb.addEventListener("change", function () {
-        var id = parseInt(cb.getAttribute("data-task"), 10);
-        if (cb.checked) { if (state.done.indexOf(id) < 0) state.done.push(id); }
-        else { state.done = state.done.filter(function (x) { return x !== id; }); }
+        var id = cb.getAttribute("data-task");
+        var numId = parseInt(id, 10);
+        var key = String(numId) === id ? numId : id;
+        if (cb.checked) { if (state.done.indexOf(key) < 0) state.done.push(key); }
+        else { state.done = state.done.filter(function (x) { return x !== key; }); }
         persist(); renderHeader(); renderPlan();
       });
     });
+    host.querySelectorAll("button[data-delct]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.customTasks = removeCustomTask(state.customTasks, btn.getAttribute("data-delct"));
+        state.done = state.done.filter(function (x) { return x !== btn.getAttribute("data-delct"); });
+        persist(); renderPlan();
+      });
+    });
+    var search = document.getElementById("planSearch");
+    search.addEventListener("input", function () {
+      planQuery = search.value;
+      clearTimeout(search._t);
+      search._t = setTimeout(renderPlan, 220);
+    });
+    document.getElementById("ctAdd").addEventListener("click", function () {
+      var title = document.getElementById("ctTitle").value;
+      try {
+        state.customTasks = addCustomTask(state.customTasks, {
+          title: title, week: document.getElementById("ctWeek").value, cat: document.getElementById("ctCat").value
+        });
+        persist(); renderPlan();
+      } catch (err) { alert(err.message); }
+    });
+  }
+
+  function taskItemHtml(p, doneSet) {
+    var cls = doneSet[p.id] ? "done" : (p.overdue ? "overdue" : "");
+    return '<li class="' + cls + '"><label><input type="checkbox" data-task="' + esc(p.id) + '"' +
+      (doneSet[p.id] ? " checked" : "") + "> <span class='cat'>" + esc(p.cat) + "</span> <span class='task-text'>" + esc(p.task) + "</span>" +
+      (p.custom ? ' <span class="badge star">yours</span>' : "") +
+      (p.overdue && !doneSet[p.id] ? ' <span class="badge">overdue</span>' : "") +
+      ' <span class="due">' + esc(p.due) + "</span>" +
+      (p.custom ? ' <button type="button" class="danger ghost small" data-delct="' + esc(p.id) + '">Remove</button>' : "") +
+      "</label></li>";
   }
 
   function renderBoxes() {
@@ -100,10 +154,27 @@
     html += '<div class="card"><h3>First-night essentials — suggested contents</h3><p class="muted">Pack one clearly-marked box with these; keep it with you, not in the truck.</p><div class="chips">' +
       sug.map(function (s) { return '<span class="chip">' + esc(s) + "</span>"; }).join("") + "</div></div>";
 
+    html += '<div class="card" style="margin-top:1.25rem"><h3>Packing supplies estimator</h3>' +
+      '<p class="muted">Rough rule of thumb so you can buy supplies in one trip.</p>' +
+      '<div class="row" style="align-items:center"><label class="small" style="font-weight:700">Bedrooms: ' +
+      '<select id="supBedrooms" style="width:auto;display:inline-block">' +
+      [0,1,2,3,4,5,6].map(function (n) { return '<option value="' + n + '">' + n + "</option>"; }).join("") +
+      "</select></label></div>" +
+      '<div id="supOut" class="small" style="margin-top:.6rem"></div></div>';
+
     if (!state.boxes.length) { html += '<p class="muted">No boxes yet. Add your first box above.</p>'; }
     else {
+      var counts = roomCounts(state.boxes);
+      var roomOpts = Object.keys(counts).sort().map(function (r) {
+        return '<option value="' + esc(r) + '"' + (state.roomFilter === r ? " selected" : "") + ">" + esc(r) + " (" + counts[r] + ")</option>";
+      }).join("");
+      html += '<div class="row" style="margin-top:1.25rem;align-items:center">' +
+        '<label class="small" style="font-weight:700">Filter by room: <select id="roomFilter" style="width:auto;display:inline-block"><option value="">All rooms (' + state.boxes.length + ")</option>" + roomOpts + "</select></label>" +
+        '<button type="button" class="ghost small" id="boxCsv">Export boxes CSV</button></div>';
+      var vis = state.boxes.filter(function (b) { return !state.roomFilter || (b.room || "Unassigned") === state.roomFilter; });
+      if (!vis.length) html += '<p class="muted">No boxes in this room yet.</p>';
       html += '<div class="boxgrid">';
-      state.boxes.forEach(function (b) {
+      vis.forEach(function (b) {
         html += '<div class="card box' + (b.essentials ? " essentials" : "") + '">' +
           '<div class="box-head"><strong>' + esc(b.label) + "</strong>" +
           (b.essentials ? ' <span class="badge star">first-night</span>' : "") +
@@ -142,6 +213,36 @@
         persist(); renderBoxes();
       });
     });
+    var rf = document.getElementById("roomFilter");
+    if (rf) rf.addEventListener("change", function () {
+      state.roomFilter = rf.value; persist(); renderBoxes();
+    });
+    var bc = document.getElementById("boxCsv");
+    if (bc) bc.addEventListener("click", function () {
+      downloadCsv("movingcheck-boxes.csv", boxesToCSV(state.boxes));
+    });
+    var supSel = document.getElementById("supBedrooms");
+    if (supSel) {
+      var renderSup = function () {
+        var s = estimateSupplies({ bedrooms: supSel.value });
+        document.getElementById("supOut").innerHTML =
+          "For a " + s.bedrooms + "-bedroom home, plan on roughly: <strong>" + s.boxes + " boxes</strong>, " +
+          s.tapeRolls + " tape rolls, " + s.bubbleWrapRolls + " bubble-wrap roll" + (s.bubbleWrapRolls === 1 ? "" : "s") +
+          ", " + s.markers + " marker" + (s.markers === 1 ? "" : "s") +
+          (s.mattressBags ? ", " + s.mattressBags + " mattress bag" + (s.mattressBags === 1 ? "" : "s") : "") + ".";
+      };
+      supSel.addEventListener("change", renderSup);
+      renderSup();
+    }
+  }
+
+  function downloadCsv(filename, csv) {
+    var blob = new Blob([csv], { type: "text/csv" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
 
   function renderMovers() {
@@ -164,7 +265,8 @@
           "<td>" + (m.rating ? m.rating.toFixed(1) + "★" : "—") + "</td><td>" + esc(m.notes) + "</td>" +
           '<td><button class="danger ghost small" data-delmover="' + m.id + '">Remove</button></td></tr>';
       });
-      html += "</tbody></table>";
+      html += "</tbody></table>" +
+        '<div class="row" style="margin-top:.8rem"><button type="button" class="ghost small" id="moverCsv">Export movers CSV</button></div>';
     }
     host.innerHTML = html;
     document.getElementById("moverForm").addEventListener("submit", function (e) {
@@ -185,6 +287,10 @@
         state.movers = state.movers.filter(function (m) { return m.id !== id; });
         persist(); renderMovers();
       });
+    });
+    var mc = document.getElementById("moverCsv");
+    if (mc) mc.addEventListener("click", function () {
+      downloadCsv("movingcheck-movers.csv", moversToCSV(state.movers));
     });
   }
 
@@ -210,7 +316,7 @@
     });
     document.getElementById("resetAll").addEventListener("click", function () {
       if (confirm("Clear all moving data and start over?")) {
-        state = { moveDate: "", done: [], boxes: [], movers: [], tab: "plan" };
+        state = { moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "" };
         persist(); renderAll(); dateInput.value = "";
       }
     });
