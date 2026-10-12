@@ -313,3 +313,16 @@ tr.winner .mover-rank { background: var(--accent); color: #fff; }
   details.week:not([open]) { display: none; }
   .route::before, .week::before { display: none; }
 }
+
+/* ---------- budget tab + booked mover ---------- */
+.booked-line { margin-top: .4rem; font-size: .95rem; color: #7a6a54; }
+.booked-line strong { color: var(--ink); }
+.kv { display: flex; justify-content: space-between; gap: 1rem; padding: .35rem 0; font-size: .95rem; }
+.grow { display: flex; flex-direction: column; gap: .6rem; }
+.grow-item { display: flex; align-items: center; gap: 1rem; border: 1px solid var(--line);
+  border-radius: 0; padding: .7rem .9rem; background: #fff; }
+.grow-item > div:first-child { flex: 1; }
+.bar { height: 10px; background: #e9e0cf; border-radius: 0; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent, #8a6d3b); border-radius: 0; }
+tr.booked { background: #f6efdd; }
+.badge.booked-badge { background: #2e7d32; color: #fff; }

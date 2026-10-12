@@ -8,7 +8,7 @@
     catch (e) { return {}; }
   }
   function save(s) { localStorage.setItem(KEY, JSON.stringify(s)); }
-  var state = Object.assign({ moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "" }, load());
+  var state = Object.assign({ moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "", expenses: [], moveBudget: "" }, load());
   function persist() { save(state); }
   var planQuery = "";
 
@@ -38,17 +38,22 @@
     var C = 351.9;
     var off = C - (C * prog.pct / 100);
     var when = days < 0 ? Math.abs(days) + " days ago" : days === 0 ? "today!" : "in " + days + " days";
+    var bk = bookedMover(state.movers);
+    var spend = expenseTotals(state.expenses).total;
     el.innerHTML =
       '<div class="ring-wrap" role="img" aria-label="' + prog.pct + '% complete"><svg width="128" height="128" viewBox="0 0 128 128">' +
       '<circle class="ring-bg" cx="64" cy="64" r="56" stroke-width="11"/>' +
       '<circle class="ring-fg" cx="64" cy="64" r="56" stroke-width="11" stroke-dasharray="' + C + '" stroke-dashoffset="' + off + '"/></svg>' +
       '<div class="ring-num"><div><b>' + prog.pct + '%</b><span>COMPLETE</span></div></div></div>' +
       '<div class="hero-copy"><h2>Moving ' + esc(state.moveDate) + '</h2>' +
-      '<span class="when">' + esc(when) + '</span></div>' +
+      '<span class="when">' + esc(when) + '</span>' +
+      (bk ? '<div class="booked-line">Booked: <strong>' + esc(bk.name) + '</strong>' + (bk.quote ? ' · $' + Number(bk.quote).toLocaleString() : '') + '</div>' : '') +
+      '</div>' +
       '<div class="hero-stats">' +
       '<div class="stat"><span class="stat-num">' + prog.done + '/' + prog.total + '</span><span class="stat-lbl">tasks done</span></div>' +
       '<div class="stat"><span class="stat-num">' + state.boxes.length + '</span><span class="stat-lbl">boxes packed</span></div>' +
       '<div class="stat"><span class="stat-num">' + state.movers.length + '</span><span class="stat-lbl">mover quotes</span></div>' +
+      '<div class="stat"><span class="stat-num">$' + spend.toLocaleString() + '</span><span class="stat-lbl">move spend</span></div>' +
       "</div>";
   }
 
@@ -65,7 +70,8 @@
       '</select>' +
       '<select id="ctCat" aria-label="Task category">' + TASK_CATS.map(function (c) { return "<option>" + esc(c) + "</option>"; }).join("") + "</select>" +
       '<input id="ctTitle" placeholder="Add your own task…" maxlength="120">' +
-      '<button type="button" id="ctAdd">Add task</button></div>';
+      '<button type="button" id="ctAdd">Add task</button></div>' +
+      '<div class="row" style="margin-bottom:1.25rem"><button type="button" class="ghost small" id="planIcs">Export plan as calendar (.ics)</button></div>';
     if (q) {
       var hits = filterPlan(plan, q);
       html += '<p class="muted small">' + hits.length + ' match' + (hits.length === 1 ? "" : "es") + ' for "' + esc(q) + '"</p>';
@@ -125,6 +131,16 @@
         });
         persist(); renderPlan();
       } catch (err) { alert(err.message); }
+    });
+    document.getElementById("planIcs").addEventListener("click", function () {
+      var full = mergePlan(buildPlan(state.moveDate, todayISO()), state.customTasks, state.moveDate, todayISO());
+      if (!full.length) { alert("Set a moving date first."); return; }
+      var blob = new Blob([planToICS(full, "moving " + state.moveDate)], { type: "text/calendar" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "movingcheck-plan.ics";
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     });
   }
 
@@ -258,12 +274,14 @@
     else {
       html += '<table class="table"><thead><tr><th></th><th>Company</th><th>Quote</th><th>Rating</th><th>Notes</th><th></th></tr></thead><tbody>';
       ranked.forEach(function (m, i) {
-        html += '<tr class="mover-row' + (i === 0 ? " winner" : "") + '">' +
-          '<td><span class="mover-rank">' + (i + 1) + "</span>" + (i === 0 ? ' <span class="badge best">Best quote</span>' : "") + "</td>" +
+        html += '<tr class="mover-row' + (i === 0 ? " winner" : "") + (m.booked ? " booked" : "") + '">' +
+          '<td><span class="mover-rank">' + (i + 1) + "</span>" + (i === 0 ? ' <span class="badge best">Best quote</span>' : "") +
+          (m.booked ? ' <span class="badge booked-badge">Booked</span>' : "") + "</td>" +
           "<td><strong>" + esc(m.name) + "</strong></td>" +
           '<td class="quote">' + (m.quote ? "$" + Number(m.quote).toLocaleString() : "—") + "</td>" +
           "<td>" + (m.rating ? m.rating.toFixed(1) + "★" : "—") + "</td><td>" + esc(m.notes) + "</td>" +
-          '<td><button class="danger ghost small" data-delmover="' + m.id + '">Remove</button></td></tr>';
+          '<td><button class="ghost small" data-bookmover="' + m.id + '">' + (m.booked ? "Unbook" : "Book") + '</button> ' +
+          '<button class="danger ghost small" data-delmover="' + m.id + '">Remove</button></td></tr>';
       });
       html += "</tbody></table>" +
         '<div class="row" style="margin-top:.8rem"><button type="button" class="ghost small" id="moverCsv">Export movers CSV</button></div>';
@@ -288,6 +306,14 @@
         persist(); renderMovers();
       });
     });
+    host.querySelectorAll("[data-bookmover]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-bookmover");
+        var cur = bookedMover(state.movers);
+        state.movers = setBookedMover(state.movers, cur && cur.id === id ? null : id);
+        persist(); renderHeader(); renderMovers();
+      });
+    });
     var mc = document.getElementById("moverCsv");
     if (mc) mc.addEventListener("click", function () {
       downloadCsv("movingcheck-movers.csv", moversToCSV(state.movers));
@@ -295,13 +321,94 @@
   }
 
   function renderTabs() {
-    ["plan", "boxes", "movers"].forEach(function (t) {
+    ["plan", "boxes", "movers", "budget"].forEach(function (t) {
       document.getElementById("tabbtn-" + t).classList.toggle("active", state.tab === t);
       document.getElementById("tab-" + t).classList.toggle("hidden", state.tab !== t);
     });
   }
 
-  function renderAll() { renderHeader(); renderTabs(); renderPlan(); renderBoxes(); renderMovers(); }
+  function moneyFmt(n) { return "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
+
+  function renderBudget() {
+    var host = document.getElementById("tab-budget");
+    var t = expenseTotals(state.expenses);
+    var vs = budgetVsTarget(state.expenses, state.moveBudget);
+    var html = '<div class="card"><h3>Move budget</h3>' +
+      '<p class="muted">Set a target so you can see at a glance whether the move is staying on budget.</p>' +
+      '<div class="row" style="align-items:center"><label class="small" style="font-weight:700">Target budget ($) ' +
+      '<input id="budgetTarget" type="number" min="0" step="1" value="' + esc(state.moveBudget) + '" style="width:140px;display:inline-block"></label></div>';
+    if (state.moveBudget && Number(state.moveBudget) > 0) {
+      var pct = Math.min(100, vs.pct);
+      html += '<div class="bar" style="margin-top:.8rem"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+        '<p class="small" style="margin-top:.5rem">Spent <strong>' + moneyFmt(vs.spent) + '</strong> of ' + moneyFmt(vs.budget) +
+        ' (' + vs.pct + '%) — ' + (vs.over
+          ? '<strong style="color:#a33">over by ' + moneyFmt(vs.spent - vs.budget) + '</strong>'
+          : moneyFmt(vs.remaining) + ' remaining') + '</p>';
+    } else {
+      html += '<p class="small muted" style="margin-top:.6rem">Total spend so far: <strong>' + moneyFmt(t.total) + '</strong></p>';
+    }
+    html += '</div>';
+
+    html += '<form id="expForm" class="card form-grid" style="margin-top:1.25rem">' +
+      '<input id="expLabel" placeholder="Expense (e.g. Truck rental)" required maxlength="80">' +
+      '<select id="expCat">' + MOVE_EXPENSE_CATS.map(function (c) { return "<option>" + esc(c) + "</option>"; }).join("") + "</select>" +
+      '<input id="expAmount" type="number" min="0.01" step="0.01" placeholder="Amount ($)" required>' +
+      '<input id="expDate" type="date">' +
+      '<input id="expNote" placeholder="Note (optional)" maxlength="140">' +
+      '<button type="submit">Add expense</button></form>';
+
+    if (state.expenses.length) {
+      var cats = MOVE_EXPENSE_CATS.filter(function (c) { return t.byCat[c]; });
+      html += '<div class="card" style="margin-top:1.25rem"><h3>Spend by category</h3>' +
+        cats.map(function (c) {
+          var w = t.total ? Math.round(t.byCat[c] / t.total * 100) : 0;
+          return '<div class="kv"><span>' + esc(c) + '</span><span><strong>' + moneyFmt(t.byCat[c]) + '</strong> (' + w + '%)</span></div>' +
+            '<div class="bar" style="margin:.2rem 0 .8rem"><div class="bar-fill" style="width:' + w + '%"></div></div>';
+        }).join("") +
+        '<div class="row" style="margin-top:.8rem"><button type="button" class="ghost small" id="expCsv">Export expenses CSV</button></div></div>';
+
+      html += '<div class="card" style="margin-top:1.25rem"><h3>Expenses (' + t.count + ')</h3><div class="grow">' +
+        state.expenses.slice().reverse().map(function (e) {
+          return '<div class="grow-item"><div><b>' + esc(e.label) + '</b>' +
+            '<div class="muted small">' + esc(e.category) + (e.date ? ' · ' + esc(e.date) : '') + (e.note ? ' · ' + esc(e.note) : '') + '</div></div>' +
+            '<div class="muted"><strong>' + moneyFmt(e.amount) + '</strong></div>' +
+            '<button class="danger ghost small" data-delexp="' + e.id + '">Remove</button></div>';
+        }).join("") + '</div></div>';
+    } else {
+      html += '<p class="muted">No expenses yet — add the first one above.</p>';
+    }
+    host.innerHTML = html;
+
+    document.getElementById("expForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      try {
+        state.expenses = addExpense(state.expenses, {
+          label: document.getElementById("expLabel").value,
+          category: document.getElementById("expCat").value,
+          amount: document.getElementById("expAmount").value,
+          date: document.getElementById("expDate").value,
+          note: document.getElementById("expNote").value
+        });
+        persist(); renderHeader(); renderBudget();
+      } catch (err) { alert(err.message); }
+    });
+    document.getElementById("budgetTarget").addEventListener("change", function (e) {
+      state.moveBudget = e.target.value;
+      persist(); renderHeader(); renderBudget();
+    });
+    host.querySelectorAll("[data-delexp]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.expenses = removeExpense(state.expenses, btn.getAttribute("data-delexp"));
+        persist(); renderHeader(); renderBudget();
+      });
+    });
+    var ec = document.getElementById("expCsv");
+    if (ec) ec.addEventListener("click", function () {
+      downloadCsv("movingcheck-expenses.csv", expensesToCSV(state.expenses));
+    });
+  }
+
+  function renderAll() { renderHeader(); renderTabs(); renderPlan(); renderBoxes(); renderMovers(); renderBudget(); }
 
   document.addEventListener("DOMContentLoaded", function () {
     var dateInput = document.getElementById("moveDate");
@@ -309,14 +416,14 @@
     dateInput.addEventListener("change", function () {
       state.moveDate = dateInput.value; persist(); renderAll();
     });
-    ["plan", "boxes", "movers"].forEach(function (t) {
+    ["plan", "boxes", "movers", "budget"].forEach(function (t) {
       document.getElementById("tabbtn-" + t).addEventListener("click", function () {
         state.tab = t; persist(); renderTabs();
       });
     });
     document.getElementById("resetAll").addEventListener("click", function () {
       if (confirm("Clear all moving data and start over?")) {
-        state = { moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "" };
+        state = { moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "", expenses: [], moveBudget: "" };
         persist(); renderAll(); dateInput.value = "";
       }
     });

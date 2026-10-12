@@ -200,12 +200,123 @@ function estimateSupplies(opts) {
   };
 }
 
+/* ---- Move budget tracker ---- */
+var MOVE_EXPENSE_CATS = ["Movers", "Supplies", "Travel", "Deposits & fees", "Cleaning & repairs", "Other"];
+
+function addExpense(expenses, exp) {
+  var label = (exp && exp.label || "").trim();
+  if (!label) throw new Error("Expense needs a label");
+  var amount = parseFloat(exp.amount);
+  if (isNaN(amount) || amount <= 0) throw new Error("Expense needs an amount over $0");
+  var cat = MOVE_EXPENSE_CATS.indexOf(exp.category) >= 0 ? exp.category : "Other";
+  var date = String(exp.date || "").trim();
+  var next = (expenses || []).slice();
+  next.push({
+    id: Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+    label: label,
+    category: cat,
+    amount: Math.round(amount * 100) / 100,
+    date: date,
+    note: String(exp.note || "").trim()
+  });
+  return next;
+}
+
+function removeExpense(expenses, id) {
+  return (expenses || []).filter(function (e) { return e.id !== id; });
+}
+
+/* Totals overall + per category. */
+function expenseTotals(expenses) {
+  var byCat = {};
+  var total = 0;
+  (expenses || []).forEach(function (e) {
+    var a = Number(e.amount) || 0;
+    total += a;
+    byCat[e.category] = (byCat[e.category] || 0) + a;
+  });
+  total = Math.round(total * 100) / 100;
+  Object.keys(byCat).forEach(function (k) { byCat[k] = Math.round(byCat[k] * 100) / 100; });
+  return { total: total, byCat: byCat, count: (expenses || []).length };
+}
+
+/* Spend vs a target budget: {spent, budget, remaining, pct}. */
+function budgetVsTarget(expenses, target) {
+  var t = expenseTotals(expenses);
+  var b = Math.max(0, parseFloat(target) || 0);
+  return {
+    spent: t.total, budget: b,
+    remaining: Math.round((b - t.total) * 100) / 100,
+    pct: b > 0 ? Math.round(t.total / b * 100) : 0,
+    over: b > 0 && t.total > b
+  };
+}
+
+function expensesToCSV(expenses) {
+  var rows = [["Label", "Category", "Amount ($)", "Date", "Note"]];
+  (expenses || []).forEach(function (e) {
+    rows.push([e.label, e.category, Number(e.amount).toFixed(2), e.date || "", e.note || ""]);
+  });
+  return rows.map(function (r) { return r.map(csvCell).join(","); }).join("\n");
+}
+
+/* ---- Booked mover ---- */
+/* Mark exactly one mover as booked (the one you actually hired). */
+function setBookedMover(movers, id) {
+  return (movers || []).map(function (m) {
+    var c = {}; for (var k in m) c[k] = m[k];
+    c.booked = (id && m.id === id) ? true : false;
+    return c;
+  });
+}
+function bookedMover(movers) {
+  return ((movers || []).filter(function (m) { return m.booked; }))[0] || null;
+}
+
+/* ---- Plan -> iCalendar (.ics) ---- */
+/* Export the dated plan as a valid ICS file for Google/Apple/Outlook import. */
+function icsEscape(s) {
+  return String(s == null ? "" : s)
+    .replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,")
+    .replace(/\r?\n/g, "\\n");
+}
+function icsDate(iso) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return m ? m[1] + m[2] + m[3] : null;
+}
+function planToICS(plan, eventName) {
+  var lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//MovingCheck AI//Move plan//EN",
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH"
+  ];
+  (plan || []).forEach(function (p, i) {
+    var dt = icsDate(p.due);
+    if (!dt) return;
+    var title = (p.task || "Move task") + " [" + (p.cat || "Plan") + "]";
+    var desc = "Week label: " + (p.week === 0 ? "Moving day" : p.week + " week(s) before") +
+      (p.custom ? " (your task)" : "") + ". Planned with MovingCheck AI" +
+      (eventName ? " for " + eventName : "");
+    lines.push("BEGIN:VEVENT");
+    lines.push("UID:mc" + i + "-" + dt + "@movingcheck-ai");
+    lines.push("DTSTAMP:" + dt + "T120000Z");
+    lines.push("DTSTART;VALUE=DATE:" + dt);
+    lines.push("SUMMARY:" + icsEscape(title));
+    lines.push("DESCRIPTION:" + icsEscape(desc));
+    lines.push("END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     daysUntil, buildPlan, planProgress,
     addBox, removeBox, toggleEssential, essentialsBoxes,
     addMover, rankMovers, parseDay, isoDay,
     TASK_CATS, addCustomTask, removeCustomTask, mergePlan, filterPlan,
-    roomCounts, boxesToCSV, moversToCSV, estimateSupplies
+    roomCounts, boxesToCSV, moversToCSV, estimateSupplies,
+    MOVE_EXPENSE_CATS, addExpense, removeExpense, expenseTotals, budgetVsTarget, expensesToCSV,
+    setBookedMover, bookedMover,
+    planToICS, icsEscape, icsDate
   };
 }
