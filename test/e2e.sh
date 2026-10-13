@@ -140,5 +140,15 @@ flow "address checklist: 16 tasks in 5 groups, progress math" "
   const p=L.addressProgress(ids,['usps','power','dmv']);
   if(p.done!==3||p.total!==16||p.pct!==19) throw new Error('progress wrong: '+JSON.stringify(p));"
 
+
+# Up next: done tasks drop out of focus; completing an overdue task clears it
+flow "e2e: focus clears as tasks complete" "
+  const M = require('./js/logic.js');
+  const plan = M.mergePlan(M.buildPlan('2026-11-05', '2026-10-13'), [], '2026-11-05', '2026-10-13');
+  const f1 = M.focusTasks(plan, [], '2026-10-13');
+  if (!f1.overdue.length) throw new Error('expected overdue tasks');
+  const doneAll = f1.overdue.map(function(p){return p.id;}).concat(f1.thisWeek.map(function(p){return p.id;}));
+  if (M.focusTasks(plan, doneAll, '2026-10-13').total !== 0) throw new Error('focus not cleared');"
+
 echo "--- e2e: $pass passed, $fail failed ---"
 exit $((fail>0))

@@ -38,7 +38,8 @@
     var prog = planProgress(plan, state.done);
     var C = 351.9;
     var off = C - (C * prog.pct / 100);
-    var when = days < 0 ? Math.abs(days) + " days ago" : days === 0 ? "today!" : "in " + days + " days";
+    var tminus = days < 0 ? "T+" + Math.abs(days) : "T\u2013" + days;
+    var tlabel = days < 0 ? "days since moving day" : days === 1 ? "day to moving day" : "days to moving day";
     var bk = bookedMover(state.movers);
     var spend = expenseTotals(state.expenses).total;
     el.innerHTML =
@@ -46,8 +47,8 @@
       '<circle class="ring-bg" cx="64" cy="64" r="56" stroke-width="11"/>' +
       '<circle class="ring-fg" cx="64" cy="64" r="56" stroke-width="11" stroke-dasharray="' + C + '" stroke-dashoffset="' + off + '"/></svg>' +
       '<div class="ring-num"><div><b>' + prog.pct + '%</b><span>COMPLETE</span></div></div></div>' +
-      '<div class="hero-copy"><h2>Moving ' + esc(state.moveDate) + '</h2>' +
-      '<span class="when">' + esc(when) + '</span>' +
+      '<div class="hero-copy"><div class="tminus"><b>' + tminus + '</b><span>' + tlabel + '</span></div>' +
+      '<h2 class="move-date-line">Moving ' + esc(state.moveDate) + '</h2>' +
       (bk ? '<div class="booked-line">Booked: <strong>' + esc(bk.name) + '</strong>' + (bk.quote ? ' · $' + Number(bk.quote).toLocaleString() : '') + '</div>' : '') +
       '</div>' +
       '<div class="hero-stats">' +
@@ -73,6 +74,19 @@
       '<input id="ctTitle" placeholder="Add your own task…" maxlength="120">' +
       '<button type="button" id="ctAdd">Add task</button></div>' +
       '<div class="row" style="margin-bottom:1.25rem"><button type="button" class="ghost small" id="planIcs">Export plan as calendar (.ics)</button></div>';
+    var focus = focusTasks(plan, state.done, todayISO());
+    if (focus.total && !q) {
+      html += '<div class="card focus"><h3>Up next</h3>';
+      if (focus.overdue.length) {
+        html += '<p class="focus-lbl overdue-lbl">' + focus.overdue.length + ' overdue \u2014 do these first</p><ul class="tasks">' +
+          focus.overdue.map(function (p) { return taskItemHtml(p, doneSet); }).join("") + '</ul>';
+      }
+      if (focus.thisWeek.length) {
+        html += '<p class="focus-lbl">Due in the next 7 days</p><ul class="tasks">' +
+          focus.thisWeek.map(function (p) { return taskItemHtml(p, doneSet); }).join("") + '</ul>';
+      }
+      html += '</div>';
+    }
     if (q) {
       var hits = filterPlan(plan, q);
       html += '<p class="muted small">' + hits.length + ' match' + (hits.length === 1 ? "" : "es") + ' for "' + esc(q) + '"</p>';
@@ -246,7 +260,8 @@
       html += '<div class="row" style="margin-top:1.25rem;align-items:center">' +
         '<input id="boxSearch" type="search" placeholder="Where did I pack…? (e.g. coffee maker)" value="' + esc(boxQuery) + '" aria-label="Search boxes" style="flex:1;min-width:180px">' +
         '<label class="small" style="font-weight:700">Filter by room: <select id="roomFilter" style="width:auto;display:inline-block"><option value="">All rooms (' + state.boxes.length + ")</option>" + roomOpts + "</select></label>" +
-        '<button type="button" class="ghost small" id="boxCsv">Export boxes CSV</button></div>';
+        '<button type="button" class="ghost small" id="boxCsv">Export boxes CSV</button> ' +
+        '<button type="button" class="ghost small" id="boxLabels">Print box labels</button></div>';
       var vis = searchBoxes(state.boxes.filter(function (b) { return !state.roomFilter || (b.room || "Unassigned") === state.roomFilter; }), boxQuery);
       if (boxQuery) html += '<p class="muted small">' + vis.length + ' match' + (vis.length === 1 ? "" : "es") + ' for "' + esc(boxQuery) + '"</p>';
       if (!vis.length) html += '<p class="muted">' + (boxQuery ? 'No boxes match your search.' : 'No boxes in this room yet.') + '</p>';
@@ -303,6 +318,24 @@
     var bc = document.getElementById("boxCsv");
     if (bc) bc.addEventListener("click", function () {
       downloadCsv("movingcheck-boxes.csv", boxesToCSV(state.boxes));
+    });
+    var bl = document.getElementById("boxLabels");
+    if (bl) bl.addEventListener("click", function () {
+      if (!state.boxes.length) { alert("Add a box first."); return; }
+      var sheet = document.createElement("div");
+      sheet.className = "label-sheet";
+      sheet.innerHTML = state.boxes.map(function (b) {
+        return '<div class="box-label"><div class="bl-name">' + esc(b.label) + '</div>' +
+          (b.room ? '<div class="bl-room">' + esc(b.room) + '</div>' : '') +
+          '<div class="bl-flags">' +
+          (b.fragile ? '<span>FRAGILE</span>' : '') +
+          (b.essentials ? '<span>FIRST-NIGHT</span>' : '') + '</div>' +
+          (b.contents ? '<div class="bl-contents">' + esc(b.contents) + '</div>' : '') + '</div>';
+      }).join("");
+      document.body.appendChild(sheet);
+      document.body.classList.add("printing-labels");
+      window.print();
+      setTimeout(function () { sheet.remove(); document.body.classList.remove("printing-labels"); }, 500);
     });
     var supSel = document.getElementById("supBedrooms");
     if (supSel) {

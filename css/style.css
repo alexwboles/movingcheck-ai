@@ -330,3 +330,24 @@ tr.booked { background: #f6efdd; }
 /* ---------- moving-day timeline (sharp-edged) ---------- */
 .tasks.timeline .tl-time { display:inline-block; min-width:52px; font-weight:700;
   font-variant-numeric:tabular-nums; }
+
+/* ---------- up-next focus + countdown + box labels ---------- */
+.tminus{display:flex;align-items:baseline;gap:.7rem;margin-bottom:.35rem}
+.tminus b{font-size:3rem;font-weight:800;letter-spacing:-.04em;color:#fff;font-variant-numeric:tabular-nums;line-height:1}
+.tminus span{font-size:.72rem;text-transform:uppercase;letter-spacing:.16em;color:#d8c6ab;font-weight:700}
+.move-date-line{margin:0;font-size:1.25rem}
+.focus{border-left:5px solid var(--accent);margin-bottom:1.25rem}
+.focus h3{margin:0 0 .2rem}
+.focus-lbl{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin:.9rem 0 .35rem}
+.focus-lbl.overdue-lbl{color:var(--bad)}
+.label-sheet{display:none}
+@media print{
+  body.printing-labels>*:not(.label-sheet){display:none!important}
+  body.printing-labels .label-sheet{display:grid!important;grid-template-columns:1fr 1fr;gap:12px;padding:6px}
+  .box-label{border:2px solid #000;padding:14px;break-inside:avoid}
+  .bl-name{font-size:28px;font-weight:800;letter-spacing:-.01em}
+  .bl-room{font-size:16px;margin-top:4px;color:#333}
+  .bl-flags{margin-top:8px;display:flex;gap:8px}
+  .bl-flags span{border:2px solid #000;padding:2px 10px;font-weight:800;font-size:13px;letter-spacing:.06em}
+  .bl-contents{margin-top:8px;font-size:13px}
+}

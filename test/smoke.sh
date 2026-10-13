@@ -125,5 +125,26 @@ check "address progress math" node -e "
   if(p.done!==2||p.total!==ids.length) throw new Error('progress counts');
   if(p.pct!==Math.round(2/ids.length*100)) throw new Error('progress pct');"
 
+check "focusTasks in logic.js" grep -q 'focusTasks' js/logic.js
+check "Up next panel in app.js" grep -q 'class="card focus"' js/app.js
+check "countdown hero in app.js" grep -q 'tminus' js/app.js
+check "print box labels in app.js" grep -q 'boxLabels' js/app.js
+check "label print CSS present" grep -q 'label-sheet' css/style.css
+
+check "focusTasks overdue + this-week logic" node -e "
+const M = require('./js/logic.js');
+const plan = [
+  { id: 1, due: '2026-10-01', overdue: true },
+  { id: 2, due: '2026-10-14', overdue: false },
+  { id: 3, due: '2026-12-01', overdue: false },
+  { id: 4, due: '2026-10-13', overdue: false }
+];
+const f = M.focusTasks(plan, [2], '2026-10-13');
+if (f.overdue.length !== 1 || f.overdue[0].id !== 1) process.exit(1);
+if (f.thisWeek.map(function(p){return p.id;}).join(',') !== '4') process.exit(1);
+if (f.total !== 2) process.exit(1);
+if (M.focusTasks([], [], '2026-10-13').total !== 0) process.exit(1);
+"
+
 echo "--- smoke: $pass passed, $fail failed ---"
 exit $((fail>0))

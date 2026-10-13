@@ -145,6 +145,25 @@ function mergePlan(plan, customTasks, moveISO, todayISO) {
   return out;
 }
 
+/* "Up next" focus: overdue tasks first, then tasks due within the next 7 days.
+   Done tasks are excluded. Plan items carry due (ISO) + overdue flags. */
+function focusTasks(plan, doneIds, todayISO) {
+  var done = {};
+  (doneIds || []).forEach(function (id) { done[id] = true; });
+  var t = parseDay(todayISO);
+  var soon = t ? new Date(t.getTime() + 7 * 86400000) : null;
+  var overdue = [], thisWeek = [];
+  (plan || []).forEach(function (p) {
+    if (done[p.id]) return;
+    if (p.overdue) { overdue.push(p); return; }
+    var d = p.due ? parseDay(p.due) : null;
+    if (d && t && d >= t && soon && d <= soon) thisWeek.push(p);
+  });
+  var byDue = function (a, b) { return String(a.due).localeCompare(String(b.due)); };
+  overdue.sort(byDue); thisWeek.sort(byDue);
+  return { overdue: overdue, thisWeek: thisWeek, total: overdue.length + thisWeek.length };
+}
+
 /* Search across a dated plan: match task text or category (case-insensitive). */
 function filterPlan(plan, query) {
   var q = (query || "").trim().toLowerCase();
@@ -378,7 +397,7 @@ if (typeof module !== "undefined" && module.exports) {
     daysUntil, buildPlan, planProgress,
     addBox, removeBox, toggleEssential, essentialsBoxes,
     addMover, rankMovers, parseDay, isoDay,
-    TASK_CATS, addCustomTask, removeCustomTask, mergePlan, filterPlan,
+    TASK_CATS, addCustomTask, removeCustomTask, mergePlan, filterPlan, focusTasks,
     roomCounts, boxesToCSV, moversToCSV, estimateSupplies,
     MOVE_EXPENSE_CATS, addExpense, removeExpense, expenseTotals, budgetVsTarget, expensesToCSV,
     setBookedMover, bookedMover,
