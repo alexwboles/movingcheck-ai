@@ -326,3 +326,7 @@ tr.winner .mover-rank { background: var(--accent); color: #fff; }
 .bar-fill { height: 100%; background: var(--accent, #8a6d3b); border-radius: 0; }
 tr.booked { background: #f6efdd; }
 .badge.booked-badge { background: #2e7d32; color: #fff; }
+
+/* ---------- moving-day timeline (sharp-edged) ---------- */
+.tasks.timeline .tl-time { display:inline-block; min-width:52px; font-weight:700;
+  font-variant-numeric:tabular-nums; }

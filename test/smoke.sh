@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MovingCheck AI smoke tests — 12 checks. Exit non-zero on first failure.
+# MovingCheck AI smoke tests — 16 checks. Exit non-zero on first failure.
 set -u
 cd "$(dirname "$0")/.."
 pass=0; fail=0
@@ -85,7 +85,45 @@ check "planToICS: valid calendar with dated events" node -e "
   if(esc!=='a\\\\;b\\\\,c\\\\\\\\d\\\\ne') throw new Error('icsEscape wrong: '+esc);"
 check "budget tab wired in index.html" bash -c 'grep -q "tabbtn-budget" index.html && grep -q "tab-budget" index.html'
 check "ics export button wired in app.js" bash -c 'grep -q "planIcs" js/app.js && grep -q "planToICS" js/app.js'
-check "booked mover UI wired" bash -c 'grep -q "bookedMover" js/app.js && grep -q "setBookedMover" js/app.js'
+check "address tab wired in index.html + app.js" bash -c 'grep -q "tabbtn-address" index.html && grep -q "tab-address" index.html && grep -q "renderAddress" js/app.js'
+check "box search UI wired" bash -c 'grep -q "boxSearch" js/app.js && grep -q "searchBoxes" js/app.js'
+check "moving-day timeline UI wired" bash -c 'grep -q "renderTimeline" js/app.js && grep -q "tlAdd" js/app.js'
+check "box search / timeline / address helpers exported" node -e "
+  const L=require('./js/logic.js');
+  ['searchBoxes','addTimelineEntry','removeTimelineEntry','sortTimeline','validClock','addressProgress'].forEach(f=>{
+    if(typeof L[f]!=='function') throw new Error('missing '+f);});
+  if(L.ADDRESS_TASKS.length<12) throw new Error('too few address tasks');
+  const groups=new Set(L.ADDRESS_TASKS.map(t=>t.group));
+  if(groups.size<4) throw new Error('too few address groups');
+  const ids=L.ADDRESS_TASKS.map(t=>t.id);
+  if(new Set(ids).size!==ids.length) throw new Error('duplicate address task ids');"
+check "box search matches label/room/contents" node -e "
+  const L=require('./js/logic.js');
+  let boxes=L.addBox([],{label:'K-03',room:'Kitchen',contents:'coffee maker, mugs'});
+  boxes=L.addBox(boxes,{label:'B-01',room:'Bedroom',contents:'pillows'});
+  if(L.searchBoxes(boxes,'coffee').length!==1) throw new Error('contents search');
+  if(L.searchBoxes(boxes,'K-03').length!==1) throw new Error('label search');
+  if(L.searchBoxes(boxes,'bedroom').length!==1) throw new Error('room search');
+  if(L.searchBoxes(boxes,'').length!==2) throw new Error('empty query');
+  if(L.searchBoxes(boxes,'zzzz').length!==0) throw new Error('no-match');"
+check "timeline add/sort/validate/remove" node -e "
+  const L=require('./js/logic.js');
+  let tl=L.addTimelineEntry([],{time:'08:00',label:'Movers arrive'});
+  tl=L.addTimelineEntry(tl,{time:'07:00',label:'Coffee'});
+  if(tl[0].time!=='07:00') throw new Error('not sorted');
+  let threw=false; try{ L.addTimelineEntry(tl,{time:'25:00',label:'bad'}); }catch(e){ threw=true; }
+  if(!threw) throw new Error('bad time accepted');
+  threw=false; try{ L.addTimelineEntry(tl,{time:'09:00',label:''}); }catch(e){ threw=true; }
+  if(!threw) throw new Error('empty label accepted');
+  const id=tl[0].id;
+  tl=L.removeTimelineEntry(tl,id);
+  if(tl.length!==1||tl[0].time!=='08:00') throw new Error('remove broken');"
+check "address progress math" node -e "
+  const L=require('./js/logic.js');
+  const ids=L.ADDRESS_TASKS.map(t=>t.id);
+  const p=L.addressProgress(ids,[ids[0],ids[1]]);
+  if(p.done!==2||p.total!==ids.length) throw new Error('progress counts');
+  if(p.pct!==Math.round(2/ids.length*100)) throw new Error('progress pct');"
 
 echo "--- smoke: $pass passed, $fail failed ---"
 exit $((fail>0))

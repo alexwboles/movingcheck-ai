@@ -273,6 +273,71 @@ function bookedMover(movers) {
   return ((movers || []).filter(function (m) { return m.booked; }))[0] || null;
 }
 
+/* ---- Box search: "where did I pack the coffee maker?" ---- */
+function searchBoxes(boxes, query) {
+  var q = (query || "").trim().toLowerCase();
+  if (!q) return (boxes || []).slice();
+  return (boxes || []).filter(function (b) {
+    return ((b.label || "") + " " + (b.room || "") + " " + (b.contents || ""))
+      .toLowerCase().indexOf(q) >= 0;
+  });
+}
+
+/* ---- Moving-day timeline: hour-by-hour run sheet for the big day ---- */
+function validClock(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(t || ""); }
+
+function addTimelineEntry(entries, entry) {
+  var time = String((entry && entry.time) || "").trim();
+  var label = String((entry && entry.label) || "").trim();
+  if (!validClock(time)) throw new Error("Timeline entry needs a valid time (HH:MM)");
+  if (!label) throw new Error("Timeline entry needs a label");
+  var next = (entries || []).slice();
+  next.push({
+    id: Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
+    time: time, label: label
+  });
+  return sortTimeline(next);
+}
+
+function removeTimelineEntry(entries, id) {
+  return (entries || []).filter(function (e) { return e.id !== id; });
+}
+
+function sortTimeline(entries) {
+  return (entries || []).slice().sort(function (a, b) {
+    return a.time < b.time ? -1 : (a.time > b.time ? 1 : 0);
+  });
+}
+
+/* ---- Address-change checklist ---- */
+/* The who-to-notify list: utilities, government, money, and everyone else. */
+var ADDRESS_TASKS = [
+  { id: "usps",    group: "Mail",       task: "File USPS change of address / mail forwarding" },
+  { id: "power",   group: "Utilities",  task: "Electric company — stop old, start new" },
+  { id: "water",   group: "Utilities",  task: "Water / sewer — stop old, start new" },
+  { id: "gas",     group: "Utilities",  task: "Gas company — stop old, start new" },
+  { id: "internet",group: "Utilities",  task: "Internet / TV provider — move or cancel service" },
+  { id: "trash",   group: "Utilities",  task: "Trash / recycling service at the new address" },
+  { id: "dmv",     group: "Government", task: "Driver's license + vehicle registration address" },
+  { id: "voter",   group: "Government", task: "Voter registration address" },
+  { id: "irs",     group: "Government", task: "IRS / state tax agency address (Form 8822)" },
+  { id: "bank",    group: "Money",      task: "Bank + credit card billing addresses" },
+  { id: "insurance", group: "Money",    task: "Renters / homeowners + auto insurance address" },
+  { id: "employer",group: "Money",      task: "Employer payroll / HR address" },
+  { id: "subs",    group: "Everyone else", task: "Subscriptions + recurring deliveries" },
+  { id: "pharmacy",group: "Everyone else", task: "Pharmacy + doctor / dentist offices" },
+  { id: "school",  group: "Everyone else", task: "Schools — transfer records if needed" },
+  { id: "contacts",group: "Everyone else", task: "Tell family, friends, and your emergency contacts" }
+];
+
+function addressProgress(taskIds, doneIds) {
+  var done = {};
+  (doneIds || []).forEach(function (id) { done[id] = true; });
+  var total = (taskIds || []).length, n = 0;
+  (taskIds || []).forEach(function (id) { if (done[id]) n++; });
+  return { total: total, done: n, pct: total ? Math.round(n / total * 100) : 0 };
+}
+
 /* ---- Plan -> iCalendar (.ics) ---- */
 /* Export the dated plan as a valid ICS file for Google/Apple/Outlook import. */
 function icsEscape(s) {
@@ -317,6 +382,9 @@ if (typeof module !== "undefined" && module.exports) {
     roomCounts, boxesToCSV, moversToCSV, estimateSupplies,
     MOVE_EXPENSE_CATS, addExpense, removeExpense, expenseTotals, budgetVsTarget, expensesToCSV,
     setBookedMover, bookedMover,
+    searchBoxes,
+    addTimelineEntry, removeTimelineEntry, sortTimeline, validClock,
+    ADDRESS_TASKS, addressProgress,
     planToICS, icsEscape, icsDate
   };
 }

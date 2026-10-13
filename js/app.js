@@ -8,9 +8,10 @@
     catch (e) { return {}; }
   }
   function save(s) { localStorage.setItem(KEY, JSON.stringify(s)); }
-  var state = Object.assign({ moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "", expenses: [], moveBudget: "" }, load());
+  var state = Object.assign({ moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "", expenses: [], moveBudget: "", timeline: [], timelineDone: [], addressDone: [] }, load());
   function persist() { save(state); }
   var planQuery = "";
+  var boxQuery = "";
 
   function todayISO() {
     var d = new Date();
@@ -100,6 +101,7 @@
       html += "</div>";
     }
     host.innerHTML = html;
+    renderTimeline(host);
     host.querySelectorAll("input[data-task]").forEach(function (cb) {
       cb.addEventListener("change", function () {
         var id = cb.getAttribute("data-task");
@@ -144,8 +146,65 @@
     });
   }
 
-  function taskItemHtml(p, doneSet) {
-    var cls = doneSet[p.id] ? "done" : (p.overdue ? "overdue" : "");
+  /* Moving-day run sheet: hour-by-hour timeline for the big day. */
+  function renderTimeline(host) {
+    var card = document.createElement("div");
+    card.className = "card";
+    card.style.marginTop = "1.5rem";
+    var doneSet = {};
+    (state.timelineDone || []).forEach(function (id) { doneSet[id] = true; });
+    var entries = sortTimeline(state.timeline || []);
+    var html = '<h3>Moving-day run sheet</h3>' +
+      '<p class="muted">Hour-by-hour for the big day itself' +
+      (state.moveDate ? ' — ' + esc(state.moveDate) : '') +
+      '. Times sort themselves; check items off as the day unfolds.</p>' +
+      '<div class="row" style="align-items:center">' +
+      '<input type="time" id="tlTime" value="08:00" aria-label="Timeline time" style="width:auto">' +
+      '<input id="tlLabel" placeholder="What happens (e.g. Movers arrive)" maxlength="120" style="flex:1;min-width:180px">' +
+      '<button type="button" id="tlAdd">Add to timeline</button></div>';
+    if (!entries.length) {
+      html += '<p class="muted">No timeline yet — add the first entry above.</p>';
+    } else {
+      html += '<ul class="tasks timeline">';
+      entries.forEach(function (e) {
+        var done = !!doneSet[e.id];
+        html += '<li class="' + (done ? "done" : "") + '"><label>' +
+          '<input type="checkbox" data-tl="' + esc(e.id) + '"' + (done ? " checked" : "") + "> " +
+          '<span class="tl-time">' + esc(e.time) + "</span> " +
+          '<span class="task-text">' + esc(e.label) + "</span></label>" +
+          ' <button type="button" class="danger ghost small" data-deltl="' + esc(e.id) + '">Remove</button></li>';
+      });
+      html += "</ul>";
+    }
+    card.innerHTML = html;
+    host.appendChild(card);
+    document.getElementById("tlAdd").addEventListener("click", function () {
+      try {
+        state.timeline = addTimelineEntry(state.timeline || [], {
+          time: document.getElementById("tlTime").value,
+          label: document.getElementById("tlLabel").value
+        });
+        persist(); renderPlan();
+      } catch (err) { alert(err.message); }
+    });
+    card.querySelectorAll("[data-deltl]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.timeline = removeTimelineEntry(state.timeline || [], btn.getAttribute("data-deltl"));
+        state.timelineDone = (state.timelineDone || []).filter(function (x) { return x !== btn.getAttribute("data-deltl"); });
+        persist(); renderPlan();
+      });
+    });
+    card.querySelectorAll("[data-tl]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var id = cb.getAttribute("data-tl");
+        if (cb.checked) { if ((state.timelineDone || []).indexOf(id) < 0) state.timelineDone.push(id); }
+        else { state.timelineDone = (state.timelineDone || []).filter(function (x) { return x !== id; }); }
+        persist(); renderPlan();
+      });
+    });
+  }
+
+  function taskItemHtml(p, doneSet) {    var cls = doneSet[p.id] ? "done" : (p.overdue ? "overdue" : "");
     return '<li class="' + cls + '"><label><input type="checkbox" data-task="' + esc(p.id) + '"' +
       (doneSet[p.id] ? " checked" : "") + "> <span class='cat'>" + esc(p.cat) + "</span> <span class='task-text'>" + esc(p.task) + "</span>" +
       (p.custom ? ' <span class="badge star">yours</span>' : "") +
@@ -185,10 +244,12 @@
         return '<option value="' + esc(r) + '"' + (state.roomFilter === r ? " selected" : "") + ">" + esc(r) + " (" + counts[r] + ")</option>";
       }).join("");
       html += '<div class="row" style="margin-top:1.25rem;align-items:center">' +
+        '<input id="boxSearch" type="search" placeholder="Where did I pack…? (e.g. coffee maker)" value="' + esc(boxQuery) + '" aria-label="Search boxes" style="flex:1;min-width:180px">' +
         '<label class="small" style="font-weight:700">Filter by room: <select id="roomFilter" style="width:auto;display:inline-block"><option value="">All rooms (' + state.boxes.length + ")</option>" + roomOpts + "</select></label>" +
         '<button type="button" class="ghost small" id="boxCsv">Export boxes CSV</button></div>';
-      var vis = state.boxes.filter(function (b) { return !state.roomFilter || (b.room || "Unassigned") === state.roomFilter; });
-      if (!vis.length) html += '<p class="muted">No boxes in this room yet.</p>';
+      var vis = searchBoxes(state.boxes.filter(function (b) { return !state.roomFilter || (b.room || "Unassigned") === state.roomFilter; }), boxQuery);
+      if (boxQuery) html += '<p class="muted small">' + vis.length + ' match' + (vis.length === 1 ? "" : "es") + ' for "' + esc(boxQuery) + '"</p>';
+      if (!vis.length) html += '<p class="muted">' + (boxQuery ? 'No boxes match your search.' : 'No boxes in this room yet.') + '</p>';
       html += '<div class="boxgrid">';
       vis.forEach(function (b) {
         html += '<div class="card box' + (b.essentials ? " essentials" : "") + '">' +
@@ -232,6 +293,12 @@
     var rf = document.getElementById("roomFilter");
     if (rf) rf.addEventListener("change", function () {
       state.roomFilter = rf.value; persist(); renderBoxes();
+    });
+    var bs = document.getElementById("boxSearch");
+    if (bs) bs.addEventListener("input", function () {
+      boxQuery = bs.value;
+      clearTimeout(bs._t);
+      bs._t = setTimeout(renderBoxes, 220);
     });
     var bc = document.getElementById("boxCsv");
     if (bc) bc.addEventListener("click", function () {
@@ -321,7 +388,7 @@
   }
 
   function renderTabs() {
-    ["plan", "boxes", "movers", "budget"].forEach(function (t) {
+    ["plan", "boxes", "movers", "budget", "address"].forEach(function (t) {
       document.getElementById("tabbtn-" + t).classList.toggle("active", state.tab === t);
       document.getElementById("tab-" + t).classList.toggle("hidden", state.tab !== t);
     });
@@ -408,7 +475,43 @@
     });
   }
 
-  function renderAll() { renderHeader(); renderTabs(); renderPlan(); renderBoxes(); renderMovers(); renderBudget(); }
+  function renderAll() { renderHeader(); renderTabs(); renderPlan(); renderBoxes(); renderMovers(); renderBudget(); renderAddress(); }
+
+  /* Address-change checklist: who to notify, grouped, with progress. */
+  function renderAddress() {
+    var host = document.getElementById("tab-address");
+    var doneSet = {};
+    (state.addressDone || []).forEach(function (id) { doneSet[id] = true; });
+    var prog = addressProgress(ADDRESS_TASKS.map(function (t) { return t.id; }), state.addressDone || []);
+    var pct = Math.min(100, prog.pct);
+    var groups = [];
+    ADDRESS_TASKS.forEach(function (t) {
+      if (groups.indexOf(t.group) < 0) groups.push(t.group);
+    });
+    var html = '<div class="card"><h3>Change of address</h3>' +
+      '<p class="muted">The who-to-notify list — utilities, government, money, everyone else. ' +
+      prog.done + " of " + prog.total + " done.</p>" +
+      '<div class="bar"><div class="bar-fill" style="width:' + pct + '%"></div></div></div>';
+    groups.forEach(function (g) {
+      html += '<div class="card" style="margin-top:1rem"><h3>' + esc(g) + "</h3>" +
+        '<ul class="tasks">' +
+        ADDRESS_TASKS.filter(function (t) { return t.group === g; }).map(function (t) {
+          var done = !!doneSet[t.id];
+          return '<li class="' + (done ? "done" : "") + '"><label>' +
+            '<input type="checkbox" data-addr="' + esc(t.id) + '"' + (done ? " checked" : "") + "> " +
+            '<span class="task-text">' + esc(t.task) + "</span></label></li>";
+        }).join("") + "</ul></div>";
+    });
+    host.innerHTML = html;
+    host.querySelectorAll("[data-addr]").forEach(function (cb) {
+      cb.addEventListener("change", function () {
+        var id = cb.getAttribute("data-addr");
+        if (cb.checked) { if ((state.addressDone || []).indexOf(id) < 0) state.addressDone.push(id); }
+        else { state.addressDone = (state.addressDone || []).filter(function (x) { return x !== id; }); }
+        persist(); renderHeader(); renderAddress();
+      });
+    });
+  }
 
   document.addEventListener("DOMContentLoaded", function () {
     var dateInput = document.getElementById("moveDate");
@@ -416,14 +519,14 @@
     dateInput.addEventListener("change", function () {
       state.moveDate = dateInput.value; persist(); renderAll();
     });
-    ["plan", "boxes", "movers", "budget"].forEach(function (t) {
+    ["plan", "boxes", "movers", "budget", "address"].forEach(function (t) {
       document.getElementById("tabbtn-" + t).addEventListener("click", function () {
         state.tab = t; persist(); renderTabs();
       });
     });
     document.getElementById("resetAll").addEventListener("click", function () {
       if (confirm("Clear all moving data and start over?")) {
-        state = { moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "", expenses: [], moveBudget: "" };
+        state = { moveDate: "", done: [], boxes: [], movers: [], tab: "plan", customTasks: [], roomFilter: "", expenses: [], moveBudget: "", timeline: [], timelineDone: [], addressDone: [] };
         persist(); renderAll(); dateInput.value = "";
       }
     });

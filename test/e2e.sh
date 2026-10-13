@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MovingCheck AI e2e tests — 7 flows exercising real logic in Node. Exit non-zero on failure.
+# MovingCheck AI e2e tests — 14 flows exercising real logic in Node. Exit non-zero on failure.
 set -u
 cd "$(dirname "$0")/.."
 pass=0; fail=0
@@ -113,6 +113,32 @@ flow "estimateSupplies scales with bedrooms" "
   if(!(s3.boxes>s0.boxes)) throw new Error('more bedrooms should need more boxes');
   if(s3.boxes!==55) throw new Error('3br should estimate 55 boxes, got '+s3.boxes);
   if(!(s3.tapeRolls>0&&s3.markers>0)) throw new Error('supplies incomplete');"
+
+flow "box search finds items by label/room/contents" "
+  const L=require('./js/logic.js');
+  let boxes=L.addBox([],{label:'K-03',room:'Kitchen',contents:'coffee maker, mugs'});
+  boxes=L.addBox(boxes,{label:'B-01',room:'Bedroom',contents:'pillows'});
+  if(L.searchBoxes(boxes,'coffee maker').length!==1) throw new Error('contents hit');
+  if(L.searchBoxes(boxes,'k-03').length!==1) throw new Error('label hit (case-insensitive)');
+  if(L.searchBoxes(boxes,'kitchen').length!==1) throw new Error('room hit');
+  if(L.searchBoxes(boxes,'').length!==2) throw new Error('empty query returns all');"
+
+flow "moving-day timeline: add, sort, remove" "
+  const L=require('./js/logic.js');
+  let tl=L.addTimelineEntry([],{time:'13:00',label:'Lunch break'});
+  tl=L.addTimelineEntry(tl,{time:'08:00',label:'Movers arrive'});
+  if(tl[0].label!=='Movers arrive') throw new Error('entries sort by time');
+  tl=L.removeTimelineEntry(tl,tl[0].id);
+  if(tl.length!==1||tl[0].time!=='13:00') throw new Error('remove failed');"
+
+flow "address checklist: 16 tasks in 5 groups, progress math" "
+  const L=require('./js/logic.js');
+  if(L.ADDRESS_TASKS.length!==16) throw new Error('expected 16 tasks');
+  const groups=new Set(L.ADDRESS_TASKS.map(t=>t.group));
+  if(groups.size!==5) throw new Error('expected 5 groups');
+  const ids=L.ADDRESS_TASKS.map(t=>t.id);
+  const p=L.addressProgress(ids,['usps','power','dmv']);
+  if(p.done!==3||p.total!==16||p.pct!==19) throw new Error('progress wrong: '+JSON.stringify(p));"
 
 echo "--- e2e: $pass passed, $fail failed ---"
 exit $((fail>0))
